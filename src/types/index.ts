@@ -62,7 +62,9 @@ export interface SmartCacheOptions {
 export interface MCPServerConfig {
   name: string;
   version: string;
-  cache: SmartCacheOptions;
+  cache: SmartCacheOptions & {
+    enableVectorCache?: boolean;
+  };
   models: {
     primary: string;
     fallback: string;
@@ -71,6 +73,14 @@ export interface MCPServerConfig {
   analytics: {
     enabled: boolean;
     metricsInterval: number;
+  };
+  queue?: {
+    enabled: boolean;
+    maxConcurrency?: number;
+    enableRateLimiting?: boolean;
+    enableLoadBalancing?: boolean;
+    enableCircuitBreaker?: boolean;
+    enableAutoScaling?: boolean;
   };
 }
 

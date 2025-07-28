@@ -20,6 +20,8 @@ export interface LLMJobData {
   context?: string;
   model?: string;
   taskType?: string;
+  quality?: 'fast' | 'balanced' | 'premium';
+  budget?: number;
   priority?: number;
   userId?: string;
   sessionId?: string;
@@ -322,3 +324,88 @@ export class JobQueueManager {
   /**
    * Wait for job completion
    */
+  async waitForJob(jobId: string, timeout: number = 30000): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        reject(new Error(`Job ${jobId} timed out after ${timeout}ms`));
+      }, timeout);
+
+      const onComplete = (job: QueueJob, result: any) => {
+        if (job.id === jobId) {
+          clearTimeout(timeoutId);
+          this.queue.off('job:completed', onComplete);
+          this.queue.off('job:failed', onFailed);
+          resolve(result);
+        }
+      };
+
+      const onFailed = (job: QueueJob, error: Error) => {
+        if (job.id === jobId) {
+          clearTimeout(timeoutId);
+          this.queue.off('job:completed', onComplete);
+          this.queue.off('job:failed', onFailed);
+          reject(error);
+        }
+      };
+
+      this.queue.on('job:completed', onComplete);
+      this.queue.on('job:failed', onFailed);
+    });
+  }
+
+  /**
+   * Batch job submission
+   */
+  async submitBatch(jobs: Array<{
+    type: QueueJob['type'];
+    data: any;
+    priority?: number;
+  }>): Promise<string[]> {
+    const jobIds: string[] = [];
+    
+    for (const job of jobs) {
+      const jobId = await this.queue.add(job.type, job.data, { priority: job.priority });
+      jobIds.push(jobId);
+    }
+    
+    return jobIds;
+  }
+
+  /**
+   * Graceful shutdown
+   */
+  async shutdown(): Promise<void> {
+    this.logger.info('Shutting down job queue manager...');
+    await this.queue.shutdown();
+    this.logger.info('Job queue manager shutdown complete');
+  }
+
+  /**
+   * Health check
+   */
+  async healthCheck(): Promise<{
+    status: 'healthy' | 'degraded' | 'unhealthy';
+    queueStatus: ReturnType<JobQueueManager['getQueueStatus']>;
+    metrics: ReturnType<JobQueueManager['getMetrics']>;
+  }> {
+    const queueStatus = this.getQueueStatus();
+    const metrics = this.getMetrics();
+    
+    const unhealthyWorkers = queueStatus.workers.filter(w => w.health !== 'healthy');
+    const queuePressure = queueStatus.waiting / 100;
+    
+    let status: 'healthy' | 'degraded' | 'unhealthy' = 'healthy';
+    
+    if (unhealthyWorkers.length > 0 || queuePressure > 0.8) {
+      status = 'degraded';
+    }
+    
+    if (unhealthyWorkers.length > queueStatus.workers.length / 2 || queuePressure > 1.5) {
+      status = 'unhealthy';
+    }
+    
+    return { status, queueStatus, metrics };
+  }
+}
+
+export default JobQueueManager;
