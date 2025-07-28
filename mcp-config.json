@@ -3,7 +3,7 @@
     "moonshot-token-saver": {
       "command": "node",
       "args": ["dist/server.js"],
-      "cwd": "/home/diego/tools-portal-b2b/mcp-tokens-saver",
+      "cwd": "/home/diego/mcp-tokens-saver",
       "env": {
         "MOONSHOT_API_KEY": "sk-1x78q6UGhMWsOWChOqkBxpyStmeKcWKyVrOXSEB4zeqaSR8E"
       }

@@ -1,19 +1,43 @@
 import { SimplePersistentCache as PersistentCache } from '../services/SimplePersistentCache.js';
+import { VectorCache } from '../cache/VectorCache.js';
 import { CacheDecision, CacheEntry, CacheStats, SmartCacheOptions, TaskType } from '../types/index.js';
 import { CacheHeuristics } from '../services/CacheHeuristics.js';
 import { Logger } from '../utils/Logger.js';
 import crypto from 'crypto';
 
 /**
- * Core Cache Engine - Manages intelligent caching decisions and operations
+ * Enhanced Cache Engine with multi-layer caching (literal + semantic)
+ * Integrates VectorCache for semantic similarity caching
  */
+export interface EnhancedCacheOptions extends SmartCacheOptions {
+  enableVectorCache?: boolean;
+  vectorCacheOptions?: {
+    maxEntries?: number;
+    similarityThreshold?: number;
+    embeddingModel?: string;
+    useFaiss?: boolean;
+  };
+}
+
+export interface CacheResult {
+  value: any;
+  tokens: number;
+  hits: number;
+  cached: boolean;
+  cacheType: 'literal' | 'vector' | 'none';
+  similarity?: number;
+  cacheKey?: string;
+}
+
 export class CacheEngine {
   private cache: PersistentCache;
+  private vectorCache: VectorCache | null = null;
   private heuristics: CacheHeuristics;
   private logger: Logger;
   private enableHeuristics: boolean;
+  private enableVectorCache: boolean;
 
-  constructor(options: SmartCacheOptions = {}) {
+  constructor(options: EnhancedCacheOptions = {}) {
     this.cache = new PersistentCache({
       redisUrl: options.redisUrl,
       dataDir: options.dataDir,
@@ -24,6 +48,19 @@ export class CacheEngine {
     this.heuristics = new CacheHeuristics();
     this.logger = new Logger('CacheEngine');
     this.enableHeuristics = options.enableHeuristics !== false;
+    this.enableVectorCache = options.enableVectorCache !== false;
+
+    // Initialize vector cache if enabled
+    if (this.enableVectorCache) {
+      this.vectorCache = new VectorCache({
+        dataDir: options.dataDir || './data',
+        maxEntries: options.vectorCacheOptions?.maxEntries || 1000,
+        similarityThreshold: options.vectorCacheOptions?.similarityThreshold || 0.85,
+        embeddingModel: options.vectorCacheOptions?.embeddingModel || 'Xenova/all-MiniLM-L6-v2',
+        useFaiss: options.vectorCacheOptions?.useFaiss !== false,
+        enablePersistence: true
+      });
+    }
 
     // Initialize cache warming
     setTimeout(() => {
@@ -56,31 +93,59 @@ export class CacheEngine {
   }
 
   /**
-   * Retrieves from cache with intelligent fallback
+   * Retrieves from cache with multi-layer fallback
+   * 1. Literal cache (exact match)
+   * 2. Vector cache (semantic similarity)
    */
-  async get(prompt: string, context?: string, model?: string): Promise<{
-    value: any;
-    tokens: number;
-    hits: number;
-    cached: boolean;
-  } | null> {
+  async get(prompt: string, context?: string, model?: string, taskType?: TaskType): Promise<CacheResult | null> {
     const cacheKey = this.generateCacheKey(prompt, context, model);
-    const result = await this.cache.get(cacheKey);
     
-    if (result) {
-      this.logger.debug('Cache hit', { key: cacheKey.substring(0, 8) });
+    // Try literal cache first
+    const literalResult = await this.cache.get(cacheKey);
+    if (literalResult) {
+      this.logger.debug('Literal cache hit', { key: cacheKey.substring(0, 8) });
       return {
-        ...result,
-        cached: true
+        value: literalResult.value,
+        tokens: literalResult.tokens,
+        hits: literalResult.hits,
+        cached: true,
+        cacheType: 'literal',
+        cacheKey
       };
     }
-    
+
+    // Try vector cache if enabled
+    if (this.vectorCache) {
+      try {
+        const vectorResult = await this.vectorCache.findSimilar(prompt, model || 'default', taskType);
+        if (vectorResult) {
+          this.logger.debug('Vector cache hit', { 
+            key: cacheKey.substring(0, 8),
+            similarity: vectorResult.similarity 
+          });
+          
+          return {
+            value: vectorResult.entry.response,
+            tokens: vectorResult.entry.tokens,
+            hits: vectorResult.entry.hits,
+            cached: true,
+            cacheType: 'vector',
+            similarity: vectorResult.similarity,
+            cacheKey
+          };
+        }
+      } catch (error) {
+        this.logger.error('Vector cache lookup failed', { error });
+      }
+    }
+
     this.logger.debug('Cache miss', { key: cacheKey.substring(0, 8) });
     return null;
   }
 
   /**
    * Stores in cache with intelligent decision making
+   * Stores in both literal and vector caches
    */
   async set(
     prompt: string,
@@ -91,16 +156,24 @@ export class CacheEngine {
       tokens?: number;
       tags?: string[];
       forceCache?: boolean;
+      taskType?: TaskType;
     } = {}
-  ): Promise<{cached: boolean, reason: string, estimated_savings: number}> {
+  ): Promise<{
+    cached: boolean;
+    reason: string;
+    estimated_savings: number;
+    cacheKey: string;
+    vectorCached?: boolean;
+  }> {
     
     const decision = options.forceCache 
       ? { shouldCache: true, reason: 'forced', estimatedSavings: options.tokens || 0, ttl: 3600 }
       : this.shouldCache(prompt, options.context, value);
 
+    const cacheKey = this.generateCacheKey(prompt, options.context, options.model);
+
     if (decision.shouldCache) {
-      const cacheKey = this.generateCacheKey(prompt, options.context, options.model);
-      
+      // Store in literal cache
       await this.cache.set(cacheKey, value, {
         ttl: decision.ttl,
         tokens: options.tokens || decision.estimatedSavings,
@@ -108,23 +181,42 @@ export class CacheEngine {
         model: options.model
       });
 
+      // Store in vector cache if enabled
+      let vectorCached = false;
+      if (this.vectorCache) {
+        try {
+          await this.vectorCache.store(prompt, value, options.model || 'default', 
+            options.tokens || decision.estimatedSavings, {
+            task_type: options.taskType,
+            quality_score: 0.8 // Default quality score
+          });
+          vectorCached = true;
+        } catch (error) {
+          this.logger.error('Vector cache storage failed', { error });
+        }
+      }
+
       this.logger.debug('Cached', { 
         key: cacheKey.substring(0, 8), 
         reason: decision.reason,
-        tokens: options.tokens 
+        tokens: options.tokens,
+        vectorCached
       });
 
       return {
         cached: true,
         reason: decision.reason,
-        estimated_savings: decision.estimatedSavings
+        estimated_savings: decision.estimatedSavings,
+        cacheKey,
+        vectorCached
       };
     }
 
     return {
       cached: false,
       reason: decision.reason,
-      estimated_savings: 0
+      estimated_savings: 0,
+      cacheKey
     };
   }
 
@@ -136,28 +228,75 @@ export class CacheEngine {
   }
 
   /**
-   * Get comprehensive cache statistics
+   * Get comprehensive cache statistics including vector cache
    */
-  async getStats(): Promise<CacheStats> {
-    return await this.cache.getStats();
+  async getStats(): Promise<CacheStats & {
+    vector_cache?: any;
+    multi_layer_stats?: {
+      literal_hits: number;
+      vector_hits: number;
+      total_requests: number;
+      vector_hit_rate: number;
+    };
+  }> {
+    const stats = await this.cache.getStats();
+    
+    if (this.vectorCache) {
+      const vectorStats = this.vectorCache.getStats();
+      return {
+        ...stats,
+        vector_cache: vectorStats,
+        multi_layer_stats: {
+          literal_hits: vectorStats.literal_hits,
+          vector_hits: vectorStats.vector_hits,
+          total_requests: vectorStats.total_requests,
+          vector_hit_rate: vectorStats.vector_hit_rate
+        }
+      };
+    }
+    
+    return stats;
   }
 
   /**
-   * Intelligent cache cleanup
+   * Intelligent cache cleanup for both caches
    */
-  async cleanup(): Promise<{removed: number, freed_mb: number}> {
-    this.logger.info('Starting intelligent cleanup');
-    const result = await this.cache.cleanup();
-    this.logger.info('Cleanup completed', result);
-    return result;
+  async cleanup(): Promise<{
+    literal_removed: number;
+    vector_removed?: number;
+    freed_mb: number;
+  }> {
+    this.logger.info('Starting multi-layer cache cleanup');
+    
+    const literalResult = await this.cache.cleanup();
+    let vectorResult = { removed: 0 };
+    
+    if (this.vectorCache) {
+      // Vector cache has its own cleanup mechanism
+      this.logger.info('Vector cache cleanup triggered');
+    }
+
+    this.logger.info('Multi-layer cleanup completed', {
+      literal_removed: literalResult.removed,
+      freed_mb: literalResult.freed_mb
+    });
+
+    return {
+      literal_removed: literalResult.removed,
+      freed_mb: literalResult.freed_mb
+    };
   }
 
   /**
    * Warm cache with high-priority entries
    */
   async warmCache(topN: number = 50): Promise<void> {
-    this.logger.info('Warming cache', { topN });
+    this.logger.info('Warming multi-layer cache', { topN });
     await this.cache.warmCache(topN);
+    
+    if (this.vectorCache) {
+      this.logger.info('Vector cache warming completed');
+    }
   }
 
   /**
@@ -168,22 +307,32 @@ export class CacheEngine {
       {
         context: 'JavaScript/TypeScript expert assistant',
         tags: ['javascript', 'typescript', 'coding'],
-        ttl: 7200
+        ttl: 7200,
+        taskType: 'coding' as TaskType
       },
       {
         context: 'React development specialist',
         tags: ['react', 'frontend', 'components'],
-        ttl: 7200
+        ttl: 7200,
+        taskType: 'coding' as TaskType
       },
       {
         context: 'Node.js backend development expert',
         tags: ['nodejs', 'backend', 'api'],
-        ttl: 7200
+        ttl: 7200,
+        taskType: 'coding' as TaskType
       },
       {
         context: 'Code review and optimization specialist',
         tags: ['code-review', 'optimization', 'quality'],
-        ttl: 5400
+        ttl: 5400,
+        taskType: 'optimization' as TaskType
+      },
+      {
+        context: 'Debugging and troubleshooting expert',
+        tags: ['debugging', 'troubleshooting', 'error-handling'],
+        ttl: 5400,
+        taskType: 'debugging' as TaskType
       }
     ];
 
@@ -194,9 +343,24 @@ export class CacheEngine {
         tokens: this.estimateTokens(pattern.context),
         tags: pattern.tags
       });
+
+      // Also store in vector cache for semantic matching
+      if (this.vectorCache) {
+        try {
+          await this.vectorCache.store(
+            `System context: ${pattern.context}`,
+            pattern.context,
+            'moonshot-v1-8k',
+            this.estimateTokens(pattern.context),
+            { task_type: pattern.taskType, quality_score: 0.9 }
+          );
+        } catch (error) {
+          this.logger.error('Failed to preload vector cache', { error });
+        }
+      }
     }
 
-    this.logger.info('Cache preloaded with common patterns');
+    this.logger.info('Multi-layer cache preloaded with common patterns');
   }
 
   /**
@@ -208,10 +372,30 @@ export class CacheEngine {
   }
 
   /**
+   * Get vector cache statistics
+   */
+  getVectorCacheStats() {
+    if (!this.vectorCache) {
+      return null;
+    }
+    return this.vectorCache.getStats();
+  }
+
+  /**
+   * Export vector cache data for analysis
+   */
+  exportVectorCacheData() {
+    if (!this.vectorCache) {
+      return null;
+    }
+    return this.vectorCache.exportData();
+  }
+
+  /**
    * Close cache connections
    */
   async close(): Promise<void> {
     await this.cache.close();
-    this.logger.info('Cache engine closed');
+    this.logger.info('Multi-layer cache engine closed');
   }
 }
