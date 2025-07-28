@@ -125,9 +125,52 @@ export class LLMProviderFactory {
       ]
     });
 
-    this.logger.info('LLM providers initialized', { 
+    this.logger.info('LLM providers initialized', {
       count: this.providers.size,
       providers: Array.from(this.providers.keys())
+    });
+
+    // Initialize local model providers
+    this.initializeLocalProviders();
+  }
+
+  private initializeLocalProviders(): void {
+    // Local Phi-3-mini provider
+    this.providers.set('local-phi3', {
+      name: 'Local Phi-3-mini',
+      baseURL: 'http://localhost:8080/v1',
+      supportsStreaming: true,
+      supportsCaching: true,
+      models: [
+        {
+          name: 'phi-3-mini-4k-instruct',
+          inputCostPer1M: 0,
+          outputCostPer1M: 0,
+          contextWindow: 4096,
+          performance: 8.5,
+          cachingSupport: true,
+          recommended: ['coding', 'general', 'analysis', 'local']
+        }
+      ]
+    });
+
+    // Local Gemma-2 provider
+    this.providers.set('local-gemma2', {
+      name: 'Local Gemma-2-2B',
+      baseURL: 'http://localhost:8081/v1',
+      supportsStreaming: true,
+      supportsCaching: true,
+      models: [
+        {
+          name: 'gemma-2-2b-it',
+          inputCostPer1M: 0,
+          outputCostPer1M: 0,
+          contextWindow: 4096,
+          performance: 7.8,
+          cachingSupport: true,
+          recommended: ['fast', 'cost-effective', 'local', 'summarization']
+        }
+      ]
     });
   }
 

@@ -7,6 +7,7 @@
 import { TokenCostIntegration, TokenCostEstimate } from '../optimization/TokenCostIntegration.js';
 import { SmartRouter, RoutingDecision, RoutingOptions } from '../optimization/SmartRouter.js';
 import { ContextCompression, CompressionResult } from '../optimization/ContextCompression.js';
+import { LocalModelRouter } from './LocalModelRouter.js';
 
 export interface ModelPricing {
   name: string;
@@ -27,26 +28,48 @@ export interface OptimizationStrategy {
 }
 
 export class ModelOptimizer {
-  private models: Map<string, ModelPricing> = new Map();
-  private smartRouter: SmartRouter;
+private models: Map<string, ModelPricing> = new Map();
+private smartRouter: SmartRouter;
+private localModelRouter: LocalModelRouter;
 
-  constructor() {
-    this.initializeModels();
-    // Initialize smart router with current cache and local model info
-    this.smartRouter = new SmartRouter(
-      {
-        hitProbability: 0.3,
-        averageLatency: 50,
-        costPerHit: 0.0001
-      },
-      {
-        available: false, // Will be updated based on environment
-        model: 'local-llama-3.2-3b',
-        averageLatency: 2000,
-        qualityScore: 0.7
-      }
-    );
+constructor() {
+  this.initializeModels();
+  this.localModelRouter = new LocalModelRouter();
+  
+  // Initialize smart router with current cache and local model info
+  this.smartRouter = new SmartRouter(
+    {
+      hitProbability: 0.3,
+      averageLatency: 50,
+      costPerHit: 0.0001
+    },
+    {
+      available: false, // Will be updated based on environment
+      model: 'local-llama-3.2-3b',
+      averageLatency: 2000,
+      qualityScore: 0.7
+    }
+  );
+  
+  // Initialize local model detection
+  this.initializeLocalModels();
+}
+
+private async initializeLocalModels(): Promise<void> {
+  try {
+    const localHealth = await this.localModelRouter.checkLocalModelsHealth();
+    const hasLocalModels = Object.keys(localHealth).length > 0;
+    
+    this.smartRouter.updateLocalModelInfo({
+      available: hasLocalModels,
+      model: hasLocalModels ? 'local-phi3' : 'local-llama-3.2-3b',
+      averageLatency: hasLocalModels ? 1000 : 2000,
+      qualityScore: hasLocalModels ? 0.85 : 0.7
+    });
+  } catch (error) {
+    console.warn('Failed to initialize local models:', error);
   }
+}
 
   private initializeModels() {
     // Moonshot AI Models (2025 pricing)
@@ -99,6 +122,27 @@ export class ModelOptimizer {
       performance: 9.5,
       cachingSupport: false,
       recommended: ['complex-reasoning']
+    });
+
+    // Local models (zero cost)
+    this.models.set('phi-3-mini-4k-instruct', {
+      name: 'Phi-3-mini-4k-instruct (Local)',
+      inputCostPer1M: 0.00,
+      outputCostPer1M: 0.00,
+      contextWindow: 4096,
+      performance: 8.5,
+      cachingSupport: true,
+      recommended: ['local', 'coding', 'analysis', 'cost-effective']
+    });
+
+    this.models.set('gemma-2-2b-it', {
+      name: 'Gemma-2-2B-IT (Local)',
+      inputCostPer1M: 0.00,
+      outputCostPer1M: 0.00,
+      contextWindow: 4096,
+      performance: 7.8,
+      cachingSupport: true,
+      recommended: ['local', 'fast', 'summarization', 'cost-effective']
     });
   }
 
@@ -516,11 +560,11 @@ export class ModelOptimizer {
   /**
    * Análise de economias mensais projetadas
    */
-  getMonthlyProjections(
+  async getMonthlyProjections(
     dailyRequests: number,
     averagePromptLength: number,
     taskTypes: Record<string, number> = { general: 1.0 }
-  ): {
+  ): Promise<{
     baseline: { model: string; monthlyCost: number; };
     optimized: { model: string; monthlyCost: number; };
     withCache: { hitRate: number; monthlyCost: number; };
@@ -534,7 +578,7 @@ export class ModelOptimizer {
         localFallback: number;
       };
     };
-  } {
+  }> {
     const inputTokens = Math.ceil(averagePromptLength / 4.5);
     const outputTokens = this.estimateOutputTokens('', 'general');
 
@@ -552,8 +596,9 @@ export class ModelOptimizer {
     const withCacheMonthly = withCacheDaily * 30;
 
     // With local model (if available)
-    const localAvailable = false; // TODO: detect from environment
-    const withLocalDaily = localAvailable ? optimizedDaily * 0.1 : optimizedDaily; // 90% local
+    const localHealth = await this.localModelRouter.checkLocalModelsHealth();
+    const localAvailable = Object.keys(localHealth).length > 0;
+    const withLocalDaily = localAvailable ? 0 : optimizedDaily; // 100% savings when local
     const withLocalMonthly = withLocalDaily * 30;
 
     const totalSavingsAmount = baselineMonthly - Math.min(withCacheMonthly, withLocalMonthly);
