@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(touch:*)",
+      "Bash(npm install:*)",
+      "Bash(npx tsx:*)"
+    ],
+    "deny": []
+  }
+}

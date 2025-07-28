@@ -1,0 +1,19 @@
+[
+  {
+    "id": "e7de2921-cf67-433f-bfb7-77db279ffb5c",
+    "key": "6ca859be9991117e",
+    "value": "ᄂ傦ೠฏ愂\u0010ӌ쾤벪⁎⠌怍鰂믩㉠୬聒蠆쩇铳Ѐ",
+    "tokens": 500,
+    "hits": 2,
+    "created_at": 1753676333519,
+    "last_accessed": 1753676333520,
+    "expires_at": 1753679933519,
+    "tags": [
+      "javascript",
+      "test"
+    ],
+    "model": "moonshot-v1-8k",
+    "compressed_size": 24,
+    "original_size": 47
+  }
+]

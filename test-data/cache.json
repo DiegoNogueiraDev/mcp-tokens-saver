@@ -1,0 +1,19 @@
+[
+  {
+    "id": "1836226a-5397-4e4b-bd2d-48e9ac4d24e1",
+    "key": "597b872a18d2067f",
+    "value": "ᄄ჎ৠ瘌惴а㮂ॠᜀኬ顧⊝Ѐ,ዀ嬄ڰᓗഴ愱呠❲޴쒏띺舰哀ś鼚㦘΢專\u0000",
+    "tokens": 150,
+    "hits": 1,
+    "created_at": 1753677782968,
+    "last_accessed": 1753677782968,
+    "expires_at": 1753681382968,
+    "tags": [
+      "javascript",
+      "async"
+    ],
+    "model": "moonshot-v1-8k",
+    "compressed_size": 34,
+    "original_size": 71
+  }
+]

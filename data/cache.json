@@ -1,0 +1,70 @@
+[
+  {
+    "id": "dad53b0c-6c12-4112-af66-81c996618ab0",
+    "key": "e72b680111bed056",
+    "value": "ᄂ邆ۦಠ옄8׀倧눊朒栀䞀ỻ쪱怌뚦vꬄ\u0000",
+    "tokens": 9,
+    "hits": 1,
+    "created_at": 1753678169980,
+    "last_accessed": 1753678169980,
+    "expires_at": 1753685369980,
+    "tags": [
+      "javascript",
+      "typescript",
+      "coding"
+    ],
+    "compressed_size": 22,
+    "original_size": 40
+  },
+  {
+    "id": "a417ff6d-061b-450e-bf14-059bbf2bbceb",
+    "key": "89ad30a14a53a6d6",
+    "value": "ᄂ傦ࡠ옂ĳÜ쀛Ϙǀ뙠ᶼ̹昔ɘ䚹䓌က",
+    "tokens": 7,
+    "hits": 1,
+    "created_at": 1753678169983,
+    "last_accessed": 1753678169983,
+    "expires_at": 1753685369983,
+    "tags": [
+      "react",
+      "frontend",
+      "components"
+    ],
+    "compressed_size": 18,
+    "original_size": 30
+  },
+  {
+    "id": "aa8c672b-a92c-440a-b181-d45a992bb2be",
+    "key": "c1be500e259c581a",
+    "value": "ᄃ郶ɠꘇ䁖ٰĀ谈恣͙䁶ቚÜꀆ찀ᰅ돀ᜤꀃ슨ɵ렠",
+    "tokens": 8,
+    "hits": 1,
+    "created_at": 1753678169984,
+    "last_accessed": 1753678169984,
+    "expires_at": 1753685369984,
+    "tags": [
+      "nodejs",
+      "backend",
+      "api"
+    ],
+    "compressed_size": 22,
+    "original_size": 36
+  },
+  {
+    "id": "b304ed93-c351-4750-ae1a-f488f85a0c29",
+    "key": "e003b4b97f437a0e",
+    "value": "ᄆჶɠꘀ䁎倛脬ꁷ᠐쁶ᆘpיŭ逋팒웆Ɯ઀捥〆\ud97a踈\u0000",
+    "tokens": 9,
+    "hits": 1,
+    "created_at": 1753678169984,
+    "last_accessed": 1753678169984,
+    "expires_at": 1753683569984,
+    "tags": [
+      "code-review",
+      "optimization",
+      "quality"
+    ],
+    "compressed_size": 24,
+    "original_size": 41
+  }
+]
